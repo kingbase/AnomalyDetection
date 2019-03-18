@@ -156,7 +156,6 @@ def anomaly_detect_vec(x, max_anoms=0.1, direction="pos", alpha=0.05,
     upper_tail = True if direction in ['pos', 'both'] else False
 
     all_anoms = pd.Series()
-    seasonal_plus_trend = pd.Series()
     for ts in all_data:
         tmp = _detect_anoms(
             ts, k=max_anoms, alpha=alpha, num_obs_per_period=period, use_decomp=True,
@@ -164,8 +163,6 @@ def anomaly_detect_vec(x, max_anoms=0.1, direction="pos", alpha=0.05,
          
         s_h_esd_timestamps = tmp['anoms'].keys()
         
-        data_decomp = tmp['stl']
-
         anoms = ts.loc[s_h_esd_timestamps]
         if threshold:
             end = longterm_period - 1 if longterm_period else x.size - 1
@@ -181,9 +178,7 @@ def anomaly_detect_vec(x, max_anoms=0.1, direction="pos", alpha=0.05,
 
             anoms = anoms[anoms >= thresh]
             all_anoms.append(anoms)
-            seasonal_plus_trend.append(data_decomp)
 
     all_anoms.drop_duplicates(inplace=True)
-    seasonal_plus_trend.drop_duplicates(inplace=True)
     
     return anoms

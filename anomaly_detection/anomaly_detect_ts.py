@@ -225,19 +225,20 @@ def _get_data_tuple(raw_data, period_override, resampling=False):
     elif timediff.seconds / 60 >= 1:
         granularity = 'min'
         period = _get_period(1440, period_override)
+    #elif timediff.seconds > 0:
+    #    granularity = 'sec'
     elif timediff.seconds > 0:
         granularity = 'sec'
-    elif timediff.seconds > 0:
-        granularity = 'sec'
+        period = _get_period(1440*60, period_override)
         
         '''
            Aggregate data to minute level of granularity if data stream granularity is sec and
            resampling=True. If resampling=False, raise ValueError
         '''      
-        if resampling is True:
-            period = _resample_to_min(data, period_override)
-        else:
-            _handle_granularity_error('sec')
+        #if resampling is True:
+        #    period = _resample_to_min(data, period_override)
+        #else:
+        #    _handle_granularity_error('sec')
     else:
         '''
            Aggregate data to minute level of granularity if data stream granularity is ms and
@@ -446,7 +447,8 @@ def anomaly_detect_ts(x, max_anoms=0.1, direction="pos", alpha=0.05, only_last=N
         all_data = [data]
 
     all_anoms = pd.Series()
-    seasonal_plus_trend = pd.Series()
+    if e_value:
+        seasonal_plus_trend = pd.Series()
     
     # Detect anomalies on all data (either entire data in one-pass, or in 2 week blocks if longterm=True)
     for series in all_data:
@@ -465,11 +467,13 @@ def anomaly_detect_ts(x, max_anoms=0.1, direction="pos", alpha=0.05, only_last=N
             anoms = _perform_threshold_filter(anoms, periodic_max, threshold)
 
         all_anoms = all_anoms.append(anoms)
-        seasonal_plus_trend = seasonal_plus_trend.append(shesd_stl)
+        if e_value:
+            seasonal_plus_trend = seasonal_plus_trend.append(shesd_stl)
 
     # De-dupe 
     all_anoms.drop_duplicates(inplace=True)
-    seasonal_plus_trend.drop_duplicates(inplace=True)
+    if e_value:
+        seasonal_plus_trend.drop_duplicates(inplace=True)
 
     # If only_last is specified, create a subset of the data corresponding to the most recent day or hour
     if only_last:
@@ -547,7 +551,8 @@ def _detect_anoms(data, k=0.49, alpha=0.05, num_obs_per_period=None,
         if verbose:
             logger.info(i, '/', max_outliers, ' completed')
 
-        if not data.mad():
+        mad = np.mean(np.absolute(data - np.mean(data)))
+        if not mad:
             break
 
         if not one_tail:
@@ -557,19 +562,22 @@ def _detect_anoms(data, k=0.49, alpha=0.05, num_obs_per_period=None,
         else:
             ares = data.median() - data
 
-        ares = ares / data.mad()
+        ares = ares / mad
+        max_ares = ares.max()
 
-        tmp_anom_index = ares[ares.values == ares.max()].index
+        tmp_anom_index = ares[ares.values == max_ares].index
         cand = pd.Series(data.loc[tmp_anom_index], index=tmp_anom_index)
 
-        data.drop(tmp_anom_index, inplace=True)
+        data = data.drop(tmp_anom_index)
 
         # Compute critical value.
         p = 1 - alpha / (n - i + 1) if one_tail else (1 - alpha / (2 * (n - i + 1)))
         t = sp.stats.t.ppf(p, n - i - 1)
         lam = t * (n - i) / np.sqrt((n - i - 1 + t ** 2) * (n - i + 1))
-        if ares.max() > lam:
+        if max_ares > lam:
             R_idx = R_idx.append(cand)
+        else:
+            break
 
     return {
         'anoms': R_idx,
